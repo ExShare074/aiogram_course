@@ -1,266 +1,166 @@
 import asyncio
-from aiogram.types import Message, FSInputFile
-from config import TOKEN, WEATHER_API_KEY, WEATHER_CITY
+from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
+from config import TOKEN, WEATHER_API_KEY, WEATHER_CITY
 import random
 import aiohttp
 from datetime import datetime
 import os
 from gtts import gTTS
-
+from googletrans import Translator
+import keyboards as kb
+from keyboards import weather_inline, training_inline
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+translator = Translator()
 
-@dp.message(Command('weather'))
-async def weather(message: Message):
-    url = f"http://api.openweathermap.org/data/2.5/weather?q={WEATHER_CITY}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status == 200:
-                data = await response.json()
-                temp = data['main']['temp']
-                description = data['weather'][0]['description']
-                forecast = f"🌤 Погода в {WEATHER_CITY}: {description}, {temp}°C"
-            else:
-                forecast = "Не удалось получить погоду 😢"
-    await message.answer(forecast)
+@dp.callback_query(F.data == 'video')
+async def Video(callback: CallbackQuery):
+    await callback.answer('Видео подгружается...', show_alert=True)
+    await callback.message.edit_text('Тут профиль с видосом!', reply_markup=await kb.test_keyboard())
 
-@dp.message(Command('video'))
-async def video(message:Message):
-    await bot.send_chat_action(message.chat.id, "upload_video")
+
+# ------------------------------
+@dp.message(CommandStart())
+async def start(message: Message):
+    await message.answer(
+        f'Привет, {message.from_user.first_name}! Выбери действие:',
+        reply_markup=kb.main
+    )
+
+# ---------- ПОГОДА ----------
+@dp.message(F.text == "🌤 Погода")
+async def weather_btn(message: Message):
+    await message.answer("Выберите период:", reply_markup=weather_inline)
+
+@dp.callback_query(F.data == "weather_tomorrow")
+async def weather_tomorrow(callback):
+    await callback.message.edit_text("☀ Завтра: солнечно +25°C")
+
+@dp.callback_query(F.data == "weather_week")
+async def weather_week(callback):
+    await callback.message.edit_text("Прогноз на 5 дней: ☀🌧☁🌤🌧")
+
+# ---------- ТРЕНИРОВКА ----------
+@dp.message(F.text == "🏋️‍♂️ Тренировка")
+async def training_btn(message: Message):
+    await message.answer("Выбери тренировку:", reply_markup=training_inline)
+
+@dp.callback_query(F.data.startswith("train_"))
+async def training_choice(callback):
+    trainings = {
+    "train_1": "🏋️‍♂️ Понедельник — Грудь + Спина\n1. Жим штанги лёжа — 4×6–8\n2. Жим гантелей под углом — 3×8–10\n3. Тяга штанги в наклоне — 4×6–8\n4. Подтягивания — 3×макс\n5. Пуловер — 3×12",
+    "train_2": "🏋️‍♂️ Среда — Ноги\n1. Приседания — 4×6–8\n2. Жим ногами — 3×10\n3. Выпады — 3×10\n4. Румынская тяга — 3×8–10\n5. Подъём на носки — 4×15–20",
+    "train_3": "🏋️‍♂️ Пятница — Плечи + Руки\n1. Жим стоя — 4×6–8\n2. Разведения гантелей — 3×12\n3. Шраги — 3×12\n4. Сгибания штанги — 4×8\n5. Французский жим — 4×8\n6. Молотки — 3×10"
+    }
+    text = trainings.get(callback.data, "Нет такой тренировки 😢")
+    await callback.message.edit_text(text)
+
+
+@dp.message(F.text == "🎥 Видео")
+async def video_btn(message: Message):
     video = FSInputFile('video.mp4')
     await bot.send_video(message.chat.id, video)
 
-@dp.message(Command('doc'))
-async def doc(message: Message):
-    await bot.send_chat_action(message.chat.id, "upload_document")
+@dp.message(F.text == "📄 Документ")
+async def doc_btn(message: Message):
     doc = FSInputFile('training.pdf')
     await bot.send_document(message.chat.id, doc)
 
-@dp.message(Command('voice'))
-async def voice(message: Message):
-    await bot.send_chat_action(message.chat.id, "upload_audio")
-    voice = FSInputFile('sample.ogg')
-    await message.answer_voice(voice)
-    os.remove('sample.ogg')
+@dp.message(F.text == "🎙 Голос")
+async def voice_btn(message: Message):
+    tts = gTTS(text="Привет! Я голосовой помощник.", lang='ru')
+    tts.save("voice.ogg")
+    voice = FSInputFile("voice.ogg")
+    await bot.send_audio(message.chat.id, voice)
+    os.remove("voice.ogg")
 
-@dp.message(Command('numberfact'))
-async def number_fact(message: Message):
+from googletrans import Translator
+
+@dp.message(F.text == "🔢 Факт о числе")
+async def numfact_btn(message: Message):
     async with aiohttp.ClientSession() as session:
         async with session.get("http://numbersapi.com/random/trivia") as response:
-            if response.status ==200:
-                fact = await response.text()
-                await message.answer(f"{fact}")
+            if response.status == 200:
+                fact_en = await response.text()
+                translator = Translator()
+                fact_ru = translator.translate(fact_en, dest='ru').text
+                await message.answer(f"🔢 Интересный факт:\n{fact_ru}")
             else:
-                if response.status == 404:
-                    await message.answer("Не удалось получить факты о цифрах 😢")
-                else:
-                    await message.answer("Неизвестная ошибка 😢")
+                await message.answer("Не удалось получить факт 😢")
 
-@dp.message(Command('facts'))
-async  def all_facts(message:Message):
+
+
+
+
+@dp.message(F.text == "📜 Цитата")
+async def quote_btn(message: Message):
     async with aiohttp.ClientSession() as session:
-        async with session.get("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en") as response:
-            if response.status ==200:
-                data = await response.json()
-                fact = data['text']
-                await message.answer(fact)
-            else:
-                if response.status == 404:
-                    await message.answer("Не удалось получить факты 😢")
-                else:
-                    await message.answer("Неизвестная ошибка 😢")
-
-
-@dp.message(Command('quotable'))
-async def quotable(message:Message):
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://zenquotes.io/api/random") as response:
-                if response.status ==200:
-                    data = await response.json()
-                    quote = data['quote']
-                    movie = data['movie']
-                    await message.answer(f"🎬 {quote}\n— {movie}")
-                else:
-                    if response.status == 404:
-                        await message.answer("Не удалось получить цитату 😢")
-                    else:
-                        await message.answer("Неизвестная ошибка 😢")
-
-@dp.message(Command('trivia'))
-async def trivia(message: Message):
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://opentdb.com/api.php?amount=1&type=multiple") as response:
-            if response.status ==200:
-                data = await response.json()
-                question = data["results"][0]["question"]
-                answer = data["results"][0]["correct_answer"]
-                await message.answer(f"🧠 Вопрос: {question}\n✅ Ответ: {answer}")
-            else:
-                await message.answer("Не удалось получить вопрос-викторину 😢")
-
-
-@dp.message(Command("quote"))
-async def send_quote(message: Message):
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://zenquotes.io/api/random") as response:
+        async with session.get("https://api.forismatic.com/api/1.0/?method=getQuote&format=json&lang=ru") as response:
             if response.status == 200:
                 data = await response.json()
-                quote = data[0]['q']
-                author = data[0]['a']
-                await message.answer(f"💬 {quote}\n— {author}")
+                quote = data['quoteText']
+                author = data['quoteAuthor'] if data['quoteAuthor'] else "Неизвестный автор"
+                await message.answer(f"📜 Цитата дня:\n\n«{quote}»\n— {author}")
             else:
                 await message.answer("⚠️ Не удалось получить цитату.")
 
 
-@dp.message(Command('joke'))
-async def send_joke(message:Message):
+
+@dp.message(F.text == "😂 Шутка")
+async def joke_btn(message: Message):
     async with aiohttp.ClientSession() as session:
-        async with session.get("https://official-joke-api.appspot.com/jokes/random") as response:
-            if response ==200:
-                data = await response.json()
-                joke = f"😂 {data['setup']} \n {data['punchline']}"
-            else:
-                if response.status == 404:
-                    joke = "Не удалось получить шутку 😢"
+        async with session.get("https://anekdotme.ru/random") as response:
+            if response.status == 200:
+                html = await response.text()
+                # маленький парсинг (так как API в HTML)
+                import re
+                jokes = re.findall(r'<div class="anekdot_text">(.*?)</div>', html, re.S)
+                if jokes:
+                    joke = jokes[0].strip()
+                    await message.answer(f"😂 Шутка дня:\n\n{joke}")
                 else:
-                    joke = "Неизвестная ошибка 😢"
-
-
-@dp.message(Command('meme'))
-async def meme(message:Message):
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://api.imgflip.com/get_memes") as response:
-            if response.status ==200:
-                data  = await response.json()
-                await message.answer_photo(photo=data['url'], caption=data['title'])
+                    await message.answer("Не удалось найти шутку 😢")
             else:
-                if response.status == 404:
-                    await message.answer("Не удалось получить мем 😢")
-                else:
-                    await message.answer("Неизвестная ошибка 😢")
+                await message.answer("Не удалось получить шутку 😢")
 
 
-@dp.message(Command('photo', prefix='&'))
-async def answ_photo(message: Message):
-    list = ['https://shmpmgu.ru/wp-content/uploads/2023/03/6-foto-iskusstvennyj-intellekt-i-devushka-930x620.png',
-            'https://cdn.lifehacker.ru/wp-content/uploads/2023/02/11111_1676301611.jpg',
-            'https://i.ytimg.com/vi/oQu9Ewb0cIQ/maxresdefault.jpg',
-            'https://cloud.emcr.io/files/telegram/media/5918196181060667181/5918196181060667181_y_4.jpg']
-    rand_photo = random.choice(list)
-    await message.answer_photo(photo=rand_photo, caption='Это фото, сгенерированное супер ИИ')
 
-@dp.message(Command('help'))
-async def help(message: Message):
-    await message.answer('этот бот умеет выполнять команды:\n /start \n /help \n /photo \n /weather \n /numberfact \n '
-                         '/quote \n /meme \n /trivia \n /joke \n /facts \n /quotable \n /video \n /movie \n /training')
+@dp.message(F.text == "📷 Фото")
+async def photo_btn(message: Message):
+    photos = [
+        'https://shmpmgu.ru/wp-content/uploads/2023/03/6-foto-iskusstvennyj-intellekt-i-devushka-930x620.png',
+        'https://cdn.lifehacker.ru/wp-content/uploads/2023/02/11111_1676301611.jpg',
+        'https://i.ytimg.com/vi/oQu9Ewb0cIQ/maxresdefault.jpg',
+        'https://cloud.emcr.io/files/telegram/media/5918196181060667181/5918196181060667181_y_4.jpg'
+    ]
+    await message.answer_photo(random.choice(photos))
 
+@dp.message(F.text == "🌐 Перевести текст")
+async def translate_btn(message: Message):
+    await message.answer("Напиши команду `/translate текст`, чтобы перевести его.")
 
-@dp.message(Command('movie'))
-async def random_movie(message:Message):
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://fake-movie-database-api.herokuapp.com/api?s=random") as response:
-            if response ==200:
-                data = await response.json()
-                movie = random.choice(data['series'])
-                title = data['title']
-                year = data['year']
-                poster = data['poster']
-
-                await message.answer_photo(photo=poster, caption=f"🎬 {title} ({year})")
-            else:
-                if response.status == 404:
-                    await message.answer("Не удалось получить фильм 😢")
-                else:
-                    await message.answer("Неизвестная ошибка 😢")
-
-
-@dp.message(F.photo)
-async def react_photo(message: Message):
-    list = ['классная фотка', 'фото так себе', 'не отправляй больше такое фото']
-    rand_answer = random.choice(list)
-    await message.answer(rand_answer)
-    os.makedirs('tmp', exist_ok=True)
-    file_path = f'tmp/{message.photo[-1].file_id}.jpg'
-    await bot.download(message.photo[-1], destination=file_path)
-
-
-@dp.message(F.text == 'Что такое ИИ?')
-async def ai_text(message: Message):
-    await message.answer('Это искусственный интеллект. Это компьютерная программа, которая способна обучаться и выполнять задачи, '
-                         'не имея никакого вмешательства человека.')
-
-
-from aiogram.types import FSInputFile
-from gtts import gTTS
-import os
-import random
-
-@dp.message(Command("training"))
-async def training(message: Message):
-    weekday = datetime.now().weekday()
-
-    if weekday in (0, 1):
-        training_num = 1
-    elif weekday in (2, 3):
-        training_num = 2
-    elif weekday in (4, 5):
-        training_num = 3
-    else:
-        await message.answer("Сегодня воскресенье — день отдыха 🧘‍♂️")
+@dp.message(Command("translate"))
+async def translate_cmd(message: Message):
+    text_to_translate = message.text.replace("/translate", "").strip()
+    if not text_to_translate:
+        await message.answer("Введите текст после команды. Пример:\n/translate Привет")
         return
+    loop = asyncio.get_event_loop()
+    detected = await loop.run_in_executor(None, lambda: translator.detect(text_to_translate))
+    if detected.lang == 'en':
+        translated = await loop.run_in_executor(None, lambda: translator.translate(text_to_translate, dest='ru'))
+    else:
+        translated = await loop.run_in_executor(None, lambda: translator.translate(text_to_translate, dest='en'))
+    await message.answer(f"🗣 Перевод:\n{translated.text}")
 
-    trainings = {
-        1: "🏋️‍♂️ Тренировка 1 (Грудь + Спина):\n"
-           "1. Жим штанги лёжа – 4×6–8\n"
-           "2. Жим гантелей под углом – 3×8–10\n"
-           "3. Тяга штанги в наклоне – 4×6–8\n"
-           "4. Подтягивания – 3×макс\n"
-           "5. Пуловер – 3×12",
-
-        2: "🏋️‍♂️ Тренировка 2 (Ноги):\n"
-           "1. Приседания – 4×6–8\n"
-           "2. Жим ногами – 3×10\n"
-           "3. Выпады с гантелями – 3×10\n"
-           "4. Румынская тяга – 3×8–10\n"
-           "5. Подъём на носки – 4×15–20",
-
-        3: "🏋️‍♂️ Тренировка 3 (Плечи + Руки):\n"
-           "1. Жим гантелей или штанги вверх – 4×6–8\n"
-           "2. Разведения гантелей в стороны – 3×12\n"
-           "3. Шраги – 3×12\n"
-           "4. Сгибания штанги на бицепс – 4×8\n"
-           "5. Французский жим – 4×8\n"
-           "6. Молотки – 3×10",
-    }
-
-    selected_training = trainings[training_num]
-    await message.answer(f"📅 Сегодня: {datetime.now().strftime('%A, %d %B')}\n\n{selected_training}")
-
-
-    plain_text = selected_training.replace("×", " по ").replace("–", " — ").replace("макс", "максимум")
-    tts = gTTS(text=plain_text, lang='ru')
-    tts.save("training.ogg")
-
-    audio = FSInputFile("training.ogg")
-    await bot.send_voice(message.chat.id, audio)
-    os.remove("training.ogg")
-
-
-@dp.message(CommandStart())
-async def start(message: Message):
-    await message.answer(f'Привет, {message.from_user.first_name}')
-
-@dp.message()
-async def start(message:Message):
-    if message.text.lower() == 'тест':
-        await message.answer('тестируем')
-
+# ------------------------------
 async def main():
+    await bot.delete_webhook()
     await dp.start_polling(bot)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
