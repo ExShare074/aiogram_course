@@ -4,6 +4,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 main = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🌤 Погода")],
+        [KeyboardButton(text="💰 Крипта")],
+        [KeyboardButton(text="🤖 Помощник")],
         [KeyboardButton(text="🎥 Видео"), KeyboardButton(text="📄 Документ")],
         [KeyboardButton(text="🎙 Голос"), KeyboardButton(text="🔢 Факт о числе")],
         [KeyboardButton(text="📜 Цитата"), KeyboardButton(text="😂 Шутка")],
@@ -28,7 +30,25 @@ async def test_keyboard():
         keyboard.add(InlineKeyboardButton(text=key, url = "https://www.youtube.com/shorts/6_u_gcLOyKk"))
     return keyboard.adjust(2).as_markup()
 
-
+COINS = {
+    "bitcoin": "BTC",
+    "ethereum": "ETH",
+    "dogecoin": "DOGE",
+    "binancecoin": "BNB",
+    "solana": "SOL",
+    "ripple": "XRP",
+    "cardano": "ADA",
+    "polkadot": "DOT",
+    "tron": "TRX",
+    "litecoin": "LTC"
+}
+# --- Inline кнопки для монет ---
+inline_coins = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text=ticker, callback_data=f"coin_{coin_id}")]
+        for coin_id, ticker in COINS.items()
+    ]
+)
 # Inline-кнопки для погоды
 weather_inline = InlineKeyboardMarkup(
     inline_keyboard=[

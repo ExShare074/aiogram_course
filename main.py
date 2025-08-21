@@ -1,21 +1,37 @@
-import asyncio
-from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command
-from config import TOKEN, WEATHER_API_KEY, WEATHER_CITY
-import random
-import aiohttp
-from datetime import datetime
-import os
-from gtts import gTTS
-from googletrans import Translator
-import keyboards as kb
-from keyboards import weather_inline, training_inline
+from imports import *
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 translator = Translator()
+chatbot = Chatbot(CHATGPT_CONFIG)
 
+try:
+    chatbot = Chatbot(CHATGPT_CONFIG)
+    print("Chatbot инициализирован успешно.")
+except Exception as e:
+    print(f"Ошибка инициализации ChatGPT: {str(e)}")
+    raise
+
+class ChatGPTStates(StatesGroup):
+    waiting_for_query = State()
+
+@dp.message(lambda message: message.text == "🤖 Помощник")
+async def assistant_btn(message: types.Message, state: FSMContext):
+    await message.answer("Напиши вопрос для ChatGPT:")
+    await state.set_state(ChatGPTStates.waiting_for_query)
+
+@dp.message(ChatGPTStates.waiting_for_query)
+async def handle_query(message: types.Message, state: FSMContext):
+    prompt = message.text
+    try:
+        response = ""
+        for data in chatbot.ask(prompt):
+            response += data["message"]
+        await message.answer(response or "ChatGPT не вернул ответа.")
+    except Exception as e:
+        await message.answer(f"Ошибка при обращении к ChatGPT: {str(e)}")
+    finally:
+        await state.clear()
 
 @dp.callback_query(F.data == 'video')
 async def Video(callback: CallbackQuery):
@@ -30,6 +46,38 @@ async def start(message: Message):
         f'Привет, {message.from_user.first_name}! Выбери действие:',
         reply_markup=kb.main
     )
+
+# ---------- КРИПТА ----------
+@dp.message(F.text == "💰 Крипта")
+async def crypto_btn(message: Message):
+    await message.answer("Выберите валюту:", reply_markup=inline_coins)
+
+# --- Функция запроса цены ---
+async def fetch_coin(coin_id: str):
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                market_data = data.get("market_data", {})
+                return {
+                    "price": market_data.get("current_price", {}).get("usd", 0),
+                    "change": market_data.get("price_change_percentage_24h", 0)
+                }
+    return None
+
+@dp.callback_query(lambda c: c.data.startswith("coin_"))
+async def coin_callback(query: CallbackQuery):
+    coin_id = query.data.split("_", 1)[1]
+    coin = await fetch_coin(coin_id)
+    ticker = COINS.get(coin_id, coin_id)
+    if coin:
+        text = f"📊 {ticker}-USD\n💰 Цена: {coin['price']:.2f} USD\n📈 Изм. за 24ч: {coin['change']:.2f}%"
+    else:
+        text = f"⚠️ Не удалось получить данные по {ticker}"
+
+    await query.message.answer(text)
+    await query.answer()
 
 # ---------- ПОГОДА ----------
 @dp.message(F.text == "🌤 Погода")
