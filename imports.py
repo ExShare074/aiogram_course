@@ -9,6 +9,7 @@ import random
 import aiohttp
 import sqlite3
 from datetime import datetime
+import requests
 import logging
 import os
 from gtts import gTTS
